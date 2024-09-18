@@ -1,5 +1,6 @@
 package com.example.myapplication
 
+import android.app.Activity
 import android.media.MediaPlayer
 import android.os.Build.VERSION.SDK_INT
 import android.os.Bundle
@@ -24,7 +25,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import coil.ImageLoader
@@ -38,12 +38,17 @@ import com.airbnb.lottie.compose.LottieCompositionSpec
 import com.airbnb.lottie.compose.LottieConstants
 import com.airbnb.lottie.compose.animateLottieCompositionAsState
 import com.airbnb.lottie.compose.rememberLottieComposition
+import com.android.billingclient.api.ProductDetails
+import com.android.billingclient.api.Purchase
+import com.android.billingclient.api.SkuDetails
+import com.example.myapplication.billing.BillingManager
+import com.example.myapplication.billing.PurchaseApp
 import com.example.myapplication.ui.theme.MyApplicationTheme
-import kotlinx.coroutines.coroutineScope
+import com.example.myapplication.ui.theme.ThemePreferences
 import kotlinx.coroutines.launch
 import java.io.IOException
 
-class MainActivity : ComponentActivity() {
+class MainActivity : ComponentActivity(){
     private lateinit var themePreferences: ThemePreferences
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -68,7 +73,7 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    MusicCompose()
+                    PurchaseApp()
                 }
             }
         }
