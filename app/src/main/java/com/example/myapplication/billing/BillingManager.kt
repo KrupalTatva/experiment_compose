@@ -2,6 +2,7 @@ package com.example.myapplication.billing
 
 import android.app.Activity
 import android.content.Context
+import android.widget.Toast
 import com.android.billingclient.api.*
 
 /*class BillingManager(private val context: Context, private val listener: BillingListener) {
@@ -97,9 +98,10 @@ import com.android.billingclient.api.*
 }*/
 
 
-class BillingManager private constructor(val context: Context) {
+class BillingManager private constructor(private val context: Context) {
 
     private val billingClient: BillingClient = BillingClient.newBuilder(context)
+        .enablePendingPurchases() // Required to support pending purchases
         .setListener { billingResult, purchases ->
             if (billingResult.responseCode == BillingClient.BillingResponseCode.OK && purchases != null) {
                 for (purchase in purchases) {
@@ -107,10 +109,14 @@ class BillingManager private constructor(val context: Context) {
                 }
             } else if (billingResult.responseCode == BillingClient.BillingResponseCode.USER_CANCELED) {
                 onPurchaseFailed?.invoke()
+            } else {
+                // Handle other error cases if necessary
+                Toast.makeText(context, "Billing Error: ${billingResult.debugMessage}", Toast.LENGTH_LONG).show()
             }
         }
         .build()
 
+    // Listeners for purchase events
     private var onPurchaseCompleted: ((Purchase) -> Unit)? = null
     private var onPurchaseFailed: (() -> Unit)? = null
     private var onProductDetailsReceived: ((List<ProductDetails>) -> Unit)? = null
@@ -119,12 +125,13 @@ class BillingManager private constructor(val context: Context) {
         billingClient.startConnection(object : BillingClientStateListener {
             override fun onBillingSetupFinished(billingResult: BillingResult) {
                 if (billingResult.responseCode == BillingClient.BillingResponseCode.OK) {
+                    // Billing service is ready, now query available products
                     queryAvailableProducts()
                 }
             }
 
             override fun onBillingServiceDisconnected() {
-                // Retry connection if needed
+                // Implement retry logic if needed
             }
         })
     }
@@ -133,25 +140,27 @@ class BillingManager private constructor(val context: Context) {
         @Volatile
         private var instance: BillingManager? = null
 
+        // Retrieve a singleton instance of BillingManager
         fun getInstance(context: Context): BillingManager {
             return instance ?: synchronized(this) {
                 instance ?: BillingManager(context).also { instance = it }
             }
         }
 
-        // Save ad removal state in SharedPreferences
+        // Store the ad removal state in SharedPreferences
         fun storeAdRemovalState(context: Context, hasRemovedAds: Boolean) {
             val sharedPrefs = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
             sharedPrefs.edit().putBoolean("ads_removed", hasRemovedAds).apply()
         }
 
-        // Retrieve ad removal state from SharedPreferences
+        // Retrieve the ad removal state from SharedPreferences
         fun hasRemovedAds(context: Context): Boolean {
             val sharedPrefs = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
             return sharedPrefs.getBoolean("ads_removed", false)
         }
     }
 
+    // Setters for listeners
     fun setOnPurchaseCompletedListener(listener: (Purchase) -> Unit) {
         onPurchaseCompleted = listener
     }
@@ -164,31 +173,32 @@ class BillingManager private constructor(val context: Context) {
         onProductDetailsReceived = listener
     }
 
+    // Query available products from Google Play Console
     private fun queryAvailableProducts() {
-        val queryProductDetailsParams = QueryProductDetailsParams.newBuilder()
-            .setProductList(
-                listOf(
-                    QueryProductDetailsParams.Product.newBuilder()
-                        .setProductId("example_product_id_1") // Replace with actual product IDs
-                        .setProductType(BillingClient.ProductType.SUBS)
-                        .build(),
-                    QueryProductDetailsParams.Product.newBuilder()
-                        .setProductId("example_product_id_2")
-                        .setProductType(BillingClient.ProductType.SUBS)
-                        .build()
-                )
-            )
-            .build()
+        val productList = listOf(
+            QueryProductDetailsParams.Product.newBuilder()
+                .setProductId("example_product_id_1") // Replace with actual product IDs
+                .setProductType(BillingClient.ProductType.SUBS)
+                .build(),
+            QueryProductDetailsParams.Product.newBuilder()
+                .setProductId("example_product_id_2")
+                .setProductType(BillingClient.ProductType.SUBS)
+                .build()
+        )
 
-        billingClient.queryProductDetailsAsync(queryProductDetailsParams) { billingResult, productDetailsList ->
+        val params = QueryProductDetailsParams.newBuilder().setProductList(productList).build()
+
+        billingClient.queryProductDetailsAsync(params) { billingResult, productDetailsList ->
             if (billingResult.responseCode == BillingClient.BillingResponseCode.OK) {
                 onProductDetailsReceived?.invoke(productDetailsList)
             } else {
-                // Handle error
+                // Handle error in querying product details
+                Toast.makeText(context, "Error querying product details: ${billingResult.debugMessage}", Toast.LENGTH_LONG).show()
             }
         }
     }
 
+    // Launch the billing flow for a selected product
     fun launchBillingFlow(activity: Activity, productDetails: ProductDetails) {
         val flowParams = BillingFlowParams.newBuilder()
             .setProductDetailsParamsList(
@@ -202,43 +212,50 @@ class BillingManager private constructor(val context: Context) {
         billingClient.launchBillingFlow(activity, flowParams)
     }
 
-    // Function to check if the purchase is acknowledged and store the preference
+    // Handle completed purchases, including acknowledgment for non-consumable products
     private fun handlePurchase(purchase: Purchase) {
         if (purchase.purchaseState == Purchase.PurchaseState.PURCHASED) {
-
+            // Check each product and handle accordingly
             for (product in purchase.products) {
                 when (product) {
-                    "remove_ads" -> {
-                        // Handle logic for removing ads
-                        storeAdRemovalState(context, true)
-                    }
+                    "remove_ads" -> storeAdRemovalState(context, true)
                     "premium_access" -> {
-                        // Handle logic for premium access (e.g., unlocking extra features)
+                        // Handle premium access logic
                     }
-                    "other_product" -> {
-                        // Handle other product logic if needed
+                    else -> {
+                        // Handle other products if necessary
                     }
                 }
             }
 
-            // Save in SharedPreferences that the user has removed ads
+            // Acknowledge the purchase if not acknowledged yet
             if (!purchase.isAcknowledged) {
-                val acknowledgePurchaseParams = AcknowledgePurchaseParams.newBuilder()
+                val acknowledgeParams = AcknowledgePurchaseParams.newBuilder()
                     .setPurchaseToken(purchase.purchaseToken)
                     .build()
-                billingClient.acknowledgePurchase(acknowledgePurchaseParams) { billingResult ->
+
+                billingClient.acknowledgePurchase(acknowledgeParams) { billingResult ->
                     if (billingResult.responseCode == BillingClient.BillingResponseCode.OK) {
-                        // Successfully acknowledged
-                        storeAdRemovalState(context = context, true)
+                        onPurchaseCompleted?.invoke(purchase)
+                    } else {
+                        // Handle acknowledgment failure
+                        Toast.makeText(context, "Failed to acknowledge purchase: ${billingResult.debugMessage}", Toast.LENGTH_LONG).show()
                     }
                 }
+            } else {
+                onPurchaseCompleted?.invoke(purchase)
             }
+        } else if (purchase.purchaseState == Purchase.PurchaseState.PENDING) {
+            // Handle pending state and notify the user
+            Toast.makeText(context, "Purchase is pending. You will be notified when it's complete.", Toast.LENGTH_LONG).show()
         }
     }
 
+    // Query the user's active purchases
     fun queryPurchases() {
-        billingClient.queryPurchasesAsync(QueryPurchasesParams.newBuilder()
-            .setProductType(BillingClient.ProductType.SUBS).build()) { billingResult, purchasesList ->
+        billingClient.queryPurchasesAsync(
+            QueryPurchasesParams.newBuilder().setProductType(BillingClient.ProductType.SUBS).build()
+        ) { billingResult, purchasesList ->
             if (billingResult.responseCode == BillingClient.BillingResponseCode.OK) {
                 for (purchase in purchasesList) {
                     handlePurchase(purchase)
@@ -247,10 +264,10 @@ class BillingManager private constructor(val context: Context) {
         }
     }
 
+    // End the billing connection when it's no longer needed
     fun endConnection() {
         billingClient.endConnection()
     }
 }
-
 
 
